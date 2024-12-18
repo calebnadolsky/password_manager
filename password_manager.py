@@ -1,6 +1,7 @@
 import os
 import getpass
 import base64
+import sqlite3
 from cryptography.fernet import Fernet
 
 
@@ -32,29 +33,60 @@ def decrypt_data(key, encrypted_data):
     decrypted_data = f.decrypt(encrypted_data).decode()
     return decrypted_data
 
+def init_db():
+	conn = sqlite3.connect("password_manager.db")
+	cursor = conn.cursor()
+	cursor.execute("""
+		CREATE TABLE IF NOT EXISTS passwords (
+            id INTERGER PRIMARY KEY,
+			service TEXT NOT NULL,
+            username TEXT NOT NULL,
+			password TEXT NOT NULL
+		)
+	""")
+	conn.commit()
+	conn.close(
+
 
 # Function to store a password
-def store_password(service, username, password, keyfile_path="key.key"):
+def store_password(service, username, password, keyfile_path="keyu.key"):
     key = load_key(keyfile_path)
-    encrypted_password = encrypt_data(key, password)
-    with open("passwords.txt", "a") as file:
-        file.write(f"{service},{username},{encrypted_password.decode()}\n")
-    print(f"Password for {username} at {service} stored successfully.")
+    encrypted_passwords = encrypt_data(key, password)
+    conn = sqlite3.connect('passwords.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO passwords (service, username, password)
+        VALUES (?, ?, ?)
+	''', (service, username, encrypted_passwords.decode()))
+    conn.commit()
+    conn.close()
+    print(f"Password for {username}, at {service}, stored successfully.")
+
     
 
 
 # Function to retrieve a password
 def retrieve_password(service, username, keyfile_path="key.key"):
-   key = load_key(keyfile_path)
-   with open("passwords.txt", "r") as file:
-       for line in file.readlines():
-           stored_service, stored_username, stored_encrypted_password = line.strip().split(",")
-           if stored_service == service and stored_username == username: 
-                decrypted_password = decrypt_data(key, stored_encrypted_password.encode())
-                return decrypted_password
+    key = load_key(keyfile_path)
+    conn = sqlite3.connect('passwords.db')
+    cursor  = conn.cursor()
+    cursor.execute('''
+            SELECT password FROM passwords
+            WHERE service = ? AND username = ?
+    ''', (service, username)
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        encrypted_password = result[0]
+        decrypted_password = decrypt_data(key, encrypted_password.encode())
+        return decrypted_password
+    return None
+    
+
 
 
 def main():
+    init_db()
     while True:
         print("1. Store a Password")
         print("2. Retrieve a Password")
